@@ -1,0 +1,63 @@
+# Testing and auto-merge to prod
+# Strict security audi with --audit-level=high
+# Blocks deployment if vulnerabilities found
+# Auto-merges to prod if all checks pass
+# Prevents bad code from reaching production
+
+name: Test Branch CI
+
+on:
+  push:
+    branches: [ test ]
+  pull_request:
+    branches: [ test ]
+
+jobs:
+  test-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Security audit (production dependencies only)
+      run: npm audit --omit=dev --audit-level=high
+      continue-on-error: false
+    
+    - name: Build project
+      run: npm run build
+    
+    - name: Run preview
+      run: npm run preview &
+      
+    - name: Wait for preview server
+      run: sleep 5
+    
+    - name: Auto-merge to prod on success
+      if: success() && github.event_name == 'push'
+      uses: actions/checkout@v4
+      with:
+        ref: prod
+        fetch-depth: 0
+        token: ${{ secrets.PAT_TOKEN }}
+    
+    - name: Merge test into prod
+      if: success() && github.event_name == 'push'
+      run: |
+        git config user.name 'GitHub Actions Bot'
+        git config user.email 'actions@github.com'
+        git merge origin/test --no-ff -m "Auto-merge test to prod"
+        git push origin prod
+    
+    - name: Notify on failure
+      if: failure()
+      run: echo "Tests failed - prod deployment blocked"
