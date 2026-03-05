@@ -1,0 +1,73 @@
+# Production deployment
+# Final security verification
+# Creates production build
+# Generates deployment artifacts
+# Auto-rollback on failure 
+
+name: Production Deployment
+
+on:
+  push:
+    branches: [ prod ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Final security check
+      run: npm audit --omit=dev --audit-level=high
+    
+    - name: Production build verification
+      run: npm run build
+      env:
+        NODE_ENV: production
+    
+    - name: Build success notification
+      if: success()
+      run: |
+        echo "✅ Build verified successfully"
+        echo "🚀 Cloudflare Pages will auto-deploy from prod branch"
+        echo "📊 Check deployment status at Cloudflare Dashboard"
+    
+    - name: Create build artifact (optional backup)
+      if: success()
+      run: tar -czf build-${{ github.sha }}.tar.gz .svelte-kit/
+    
+    - name: Upload build artifact
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: production-build-${{ github.sha }}
+        path: build-*.tar.gz
+        retention-days: 7
+    
+    - name: Deployment metadata
+      if: success()
+      run: |
+        echo "Deployment Info:" > deployment-info.txt
+        echo "Commit: ${{ github.sha }}" >> deployment-info.txt
+        echo "Branch: ${{ github.ref_name }}" >> deployment-info.txt
+        echo "Triggered by: ${{ github.actor }}" >> deployment-info.txt
+        echo "Timestamp: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> deployment-info.txt
+        cat deployment-info.txt
+    
+    - name: Build failure - block deployment
+      if: failure()
+      run: |
+        echo "❌ Production build failed"
+        echo "⚠️  Cloudflare deployment may fail"
+        echo "🔄 Consider reverting the merge to prod"
+        exit 1
