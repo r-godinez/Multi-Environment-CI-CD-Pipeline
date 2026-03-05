@@ -1,0 +1,64 @@
+# Scheduled Backup of Production Build Artifacts
+
+name: Scheduled Backup
+
+on:
+  schedule:
+    # Runs every Sunday at 4 AM PST (12 PM UTC)
+    # Note: PST is UTC-8, so 4 AM PST = 12 PM UTC
+    # During PDT (Daylight Saving), 4 AM PDT = 11 AM UTC, but cron uses UTC year-round
+    - cron: '0 12 * * 0'
+  workflow_dispatch:  # Allows manual trigger from Actions tab
+
+jobs:
+  create-backup:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout prod branch
+      uses: actions/checkout@v4
+      with:
+        ref: prod
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Build project
+      run: npm run build
+      env:
+        NODE_ENV: production
+    
+    - name: Create backup artifact
+      run: |
+        TIMESTAMP=$(date -u +"%Y%m%d-%H%M%S")
+        tar -czf backup-${TIMESTAMP}-${{ github.sha }}.tar.gz .svelte-kit/
+        echo "Created backup: backup-${TIMESTAMP}-${{ github.sha }}.tar.gz"
+    
+    - name: Get current date
+      id: date
+      run: echo "date=$(date -u +%Y%m%d)" >> $GITHUB_OUTPUT
+    
+    - name: Upload backup artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: scheduled-backup-${{ steps.date.outputs.date }}
+        path: backup-*.tar.gz
+        retention-days: 30
+    
+    - name: Backup success notification
+      run: |
+        echo "✅ Scheduled backup created successfully"
+        echo "📦 Artifact will be available for 30 days"
+        echo "🕐 Next backup: Next Sunday at 4 AM PST (12 PM UTC)"
+    
+    - name: Backup failure notification
+      if: failure()
+      run: |
+        echo "❌ Scheduled backup failed"
+        echo "⚠️  Check the logs for details"
