@@ -1,0 +1,48 @@
+# Development branch CI
+# Builds project to catch errors early
+# Runs non-blocking security audit (warnings only)
+# Suggests next steps
+
+name: Dev Branch CI
+
+on:
+  push:
+    branches: [ dev ]
+  pull_request:
+    branches: [ dev ]
+
+jobs:
+  lint-and-build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Check for outdated dependencies
+      run: npm outdated || true
+    
+    - name: Quick security audit
+      run: npm audit --omit=dev --audit-level=moderate || true
+      continue-on-error: true
+    
+    - name: Build project
+      run: npm run build
+    
+    - name: Comment on success
+      if: success()
+      run: echo "✅ Dev build successful - ready to merge to test branch"
+    
+    - name: Create PR suggestion comment
+      if: success() && github.event_name == 'push'
+      run: |
+        echo "Build successful! Consider creating a PR to test branch for deployment."
